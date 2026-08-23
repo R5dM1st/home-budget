@@ -1,9 +1,11 @@
 from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.db.dependencies import get_db
 from app.models.expense import Expense
 from app.schemas.expense import ExpenseCreate, ExpenseRead
+
 from sqlalchemy import select
 
 router = APIRouter(
@@ -49,3 +51,21 @@ def list_expenses(
     expenses = db.scalars(statement).all()
 
     return list(expenses)
+
+@router.get(
+    "/{expense_id}",
+    response_model=ExpenseRead,
+)
+def get_expense(
+    expense_id: int,
+    db: Session = Depends(get_db),
+) -> Expense:
+    expense = db.get(Expense, expense_id)
+
+    if expense is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Expense not found",
+        )
+
+    return expense
