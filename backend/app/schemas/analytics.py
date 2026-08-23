@@ -42,3 +42,24 @@ class DailySpending(BaseModel):
     date: dt.date
     amount: Decimal
     transaction_count: int
+
+class TopExpense(BaseModel):
+    id: int
+    date: dt.date
+    description: str
+    category: str
+    amount: Decimal
+
+
+class MonthlyComparison(BaseModel):
+    year: int
+    month: int
+
+    previous_year: int
+    previous_month: int
+
+    current_total: Decimal
+    previous_total: Decimal
+
+    difference: Decimal
+    change_percentage: Decimal | None

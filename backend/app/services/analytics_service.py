@@ -8,11 +8,112 @@ from app.models.expense import Expense
 from app.schemas.analytics import (
     CategorySpending,
     DailySpending,
+    MonthlyComparison,
     MonthlySummary,
+    TopExpense,
 )
 from app.services import budget_service
 
+def get_previous_month(
+    year: int,
+    month: int,
+) -> tuple[int, int]:
+    if month == 1:
+        return year - 1, 12
 
+    return year, month - 1
+
+def get_total_spent(
+    db: Session,
+    year: int,
+    month: int,
+) -> Decimal:
+    start_date, end_date = get_month_bounds(year, month)
+
+    total = db.scalar(
+        select(func.sum(Expense.amount)).where(
+            Expense.date >= start_date,
+            Expense.date < end_date,
+        )
+    )
+
+    return total or Decimal("0.00")
+def get_top_expenses(
+    db: Session,
+    year: int,
+    month: int,
+    limit: int,
+) -> list[TopExpense]:
+    start_date, end_date = get_month_bounds(year, month)
+
+    statement = (
+        select(Expense)
+        .where(
+            Expense.date >= start_date,
+            Expense.date < end_date,
+        )
+        .order_by(
+            Expense.amount.desc(),
+            Expense.date.desc(),
+        )
+        .limit(limit)
+    )
+
+    expenses = db.scalars(statement).all()
+
+    return [
+        TopExpense(
+            id=expense.id,
+            date=expense.date,
+            description=expense.description,
+            category=expense.category,
+            amount=expense.amount,
+        )
+        for expense in expenses
+    ]
+def get_monthly_comparison(
+    db: Session,
+    year: int,
+    month: int,
+) -> MonthlyComparison:
+    previous_year, previous_month = get_previous_month(
+        year,
+        month,
+    )
+
+    current_total = get_total_spent(
+        db,
+        year,
+        month,
+    )
+
+    previous_total = get_total_spent(
+        db,
+        previous_year,
+        previous_month,
+    )
+
+    difference = current_total - previous_total
+
+    if previous_total == 0:
+        change_percentage = None
+    else:
+        change_percentage = (
+            difference
+            / previous_total
+            * Decimal("100")
+        ).quantize(Decimal("0.01"))
+
+    return MonthlyComparison(
+        year=year,
+        month=month,
+        previous_year=previous_year,
+        previous_month=previous_month,
+        current_total=current_total,
+        previous_total=previous_total,
+        difference=difference,
+        change_percentage=change_percentage,
+    )
 def get_month_bounds(
     year: int,
     month: int,
