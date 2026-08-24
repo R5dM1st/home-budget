@@ -34,28 +34,14 @@ class MonthlyBudget(Base):
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
-
-    year: Mapped[int] = mapped_column(
-        Integer,
-        nullable=False,
-    )
-
-    month: Mapped[int] = mapped_column(
-        Integer,
-        nullable=False,
-    )
-
-    amount: Mapped[Decimal] = mapped_column(
-        Numeric(12, 2),
-        nullable=False,
-    )
-
+    year: Mapped[int] = mapped_column(Integer, nullable=False)
+    month: Mapped[int] = mapped_column(Integer, nullable=False)
+    amount: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False)
     created_at: Mapped[dt.datetime] = mapped_column(
         DateTime(timezone=True),
         server_default=func.now(),
         nullable=False,
     )
-
     updated_at: Mapped[dt.datetime] = mapped_column(
         DateTime(timezone=True),
         server_default=func.now(),

@@ -1,17 +1,18 @@
+# Environment
+.env
+
 # Python
 __pycache__/
 *.py[cod]
-.venv/
 .pytest_cache/
+.venv/
 
-# Node / React
+# Node
 node_modules/
 dist/
 
-# Environment variables
-.env
-
 # IDE / OS
 .vscode/
+.idea/
 .DS_Store
 Thumbs.db

@@ -1,8 +1,21 @@
+import datetime as dt
+
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.models.expense import Expense
 from app.schemas.expense import ExpenseCreate, ExpenseUpdate
+
+
+def _month_bounds(year: int, month: int) -> tuple[dt.date, dt.date]:
+    start_date = dt.date(year, month, 1)
+
+    if month == 12:
+        end_date = dt.date(year + 1, 1, 1)
+    else:
+        end_date = dt.date(year, month + 1, 1)
+
+    return start_date, end_date
 
 
 def create_expense(
@@ -23,8 +36,31 @@ def create_expense(
     return expense
 
 
-def list_expenses(db: Session) -> list[Expense]:
-    statement = select(Expense).order_by(
+def list_expenses(
+    db: Session,
+    year: int | None = None,
+    month: int | None = None,
+    category: str | None = None,
+    search: str | None = None,
+) -> list[Expense]:
+    statement = select(Expense)
+
+    if year is not None and month is not None:
+        start_date, end_date = _month_bounds(year, month)
+        statement = statement.where(
+            Expense.date >= start_date,
+            Expense.date < end_date,
+        )
+
+    if category:
+        statement = statement.where(Expense.category == category)
+
+    if search and search.strip():
+        statement = statement.where(
+            Expense.description.ilike(f"%{search.strip()}%")
+        )
+
+    statement = statement.order_by(
         Expense.date.desc(),
         Expense.id.desc(),
     )

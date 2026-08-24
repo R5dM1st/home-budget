@@ -1,65 +1,49 @@
 import datetime as dt
 from decimal import Decimal
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel
 
 
-class MonthlySummary(BaseModel):
-    model_config = ConfigDict(
-        json_schema_extra={
-            "examples": [
-                {
-                    "year": 2026,
-                    "month": 8,
-                    "budget": "2000.00",
-                    "total_spent": "73.40",
-                    "remaining": "1926.60",
-                    "percentage_used": "3.67",
-                    "transaction_count": 2,
-                    "average_expense": "36.70",
-                }
-            ]
-        }
-    )
-
+class DashboardSummary(BaseModel):
     year: int
     month: int
     budget: Decimal | None
-    total_spent: Decimal
+    expenses: Decimal
+    income: Decimal
+    cash_flow: Decimal
     remaining: Decimal | None
     percentage_used: Decimal | None
+    net_worth: Decimal
     transaction_count: int
-    average_expense: Decimal
+    account_count: int
 
 
 class CategorySpending(BaseModel):
+    category_id: int | None
     category: str
+    color: str
     amount: Decimal
     transaction_count: int
 
 
-class DailySpending(BaseModel):
+class DailyCashFlow(BaseModel):
     date: dt.date
-    amount: Decimal
-    transaction_count: int
-
-class TopExpense(BaseModel):
-    id: int
-    date: dt.date
-    description: str
-    category: str
-    amount: Decimal
+    expenses: Decimal
+    income: Decimal
 
 
-class MonthlyComparison(BaseModel):
+class AccountBalance(BaseModel):
+    account_id: int
+    name: str
+    type: str
+    color: str
+    currency: str
+    balance: Decimal
+
+
+class MonthlyPoint(BaseModel):
     year: int
     month: int
-
-    previous_year: int
-    previous_month: int
-
-    current_total: Decimal
-    previous_total: Decimal
-
-    difference: Decimal
-    change_percentage: Decimal | None
+    expenses: Decimal
+    income: Decimal
+    cash_flow: Decimal
