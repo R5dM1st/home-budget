@@ -16,7 +16,7 @@ class ExpenseCategory(str, Enum):
     OTHER = "Autre"
 
 
-class ExpenseCreate(BaseModel):
+class ExpenseBase(BaseModel):
     date: dt.date
     description: str = Field(max_length=255)
     amount: Decimal = Field(
@@ -35,6 +35,14 @@ class ExpenseCreate(BaseModel):
             raise ValueError("Description must not be empty")
 
         return value
+
+
+class ExpenseCreate(ExpenseBase):
+    pass
+
+
+class ExpenseUpdate(ExpenseBase):
+    pass
 
 
 class ExpenseRead(BaseModel):
@@ -46,26 +54,3 @@ class ExpenseRead(BaseModel):
     amount: Decimal
     category: ExpenseCategory
     created_at: dt.datetime
-
-
-class ExpenseUpdate(BaseModel):
-    date: dt.date
-    description: str = Field(max_length=255)
-
-    amount: Decimal = Field(
-        gt=0,
-        max_digits=12,
-        decimal_places=2,
-    )
-
-    category: ExpenseCategory
-
-    @field_validator("description")
-    @classmethod
-    def validate_description(cls, value: str) -> str:
-        value = value.strip()
-
-        if not value:
-            raise ValueError("Description must not be empty")
-
-        return value

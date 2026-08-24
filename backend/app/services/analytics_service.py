@@ -1,253 +1,173 @@
 import datetime as dt
 from decimal import Decimal
 
-from sqlalchemy import func, select
+from sqlalchemy import case, func, select
 from sqlalchemy.orm import Session
 
-from app.models.expense import Expense
+from app.models.account import Account
+from app.models.category import Category
+from app.models.transaction import Transaction
 from app.schemas.analytics import (
+    AccountBalance,
     CategorySpending,
-    DailySpending,
-    MonthlyComparison,
-    MonthlySummary,
-    TopExpense,
+    DailyCashFlow,
+    DashboardSummary,
+    MonthlyPoint,
 )
-from app.services import budget_service
+from app.services import account_service, budget_service
 
-def get_previous_month(
-    year: int,
-    month: int,
-) -> tuple[int, int]:
-    if month == 1:
-        return year - 1, 12
 
-    return year, month - 1
+def month_bounds(year: int, month: int) -> tuple[dt.date, dt.date]:
+    start = dt.date(year, month, 1)
+    end = dt.date(year + 1, 1, 1) if month == 12 else dt.date(year, month + 1, 1)
+    return start, end
 
-def get_total_spent(
-    db: Session,
-    year: int,
-    month: int,
-) -> Decimal:
-    start_date, end_date = get_month_bounds(year, month)
 
-    total = db.scalar(
-        select(func.sum(Expense.amount)).where(
-            Expense.date >= start_date,
-            Expense.date < end_date,
+def get_dashboard_summary(db: Session, year: int, month: int) -> DashboardSummary:
+    start, end = month_bounds(year, month)
+    expenses = db.scalar(
+        select(func.coalesce(func.sum(Transaction.amount), Decimal("0.00"))).where(
+            Transaction.type == "expense",
+            Transaction.date >= start,
+            Transaction.date < end,
         )
-    )
-
-    return total or Decimal("0.00")
-def get_top_expenses(
-    db: Session,
-    year: int,
-    month: int,
-    limit: int,
-) -> list[TopExpense]:
-    start_date, end_date = get_month_bounds(year, month)
-
-    statement = (
-        select(Expense)
-        .where(
-            Expense.date >= start_date,
-            Expense.date < end_date,
+    ) or Decimal("0.00")
+    income = db.scalar(
+        select(func.coalesce(func.sum(Transaction.amount), Decimal("0.00"))).where(
+            Transaction.type == "income",
+            Transaction.date >= start,
+            Transaction.date < end,
         )
-        .order_by(
-            Expense.amount.desc(),
-            Expense.date.desc(),
-        )
-        .limit(limit)
-    )
-
-    expenses = db.scalars(statement).all()
-
-    return [
-        TopExpense(
-            id=expense.id,
-            date=expense.date,
-            description=expense.description,
-            category=expense.category,
-            amount=expense.amount,
-        )
-        for expense in expenses
-    ]
-def get_monthly_comparison(
-    db: Session,
-    year: int,
-    month: int,
-) -> MonthlyComparison:
-    previous_year, previous_month = get_previous_month(
-        year,
-        month,
-    )
-
-    current_total = get_total_spent(
-        db,
-        year,
-        month,
-    )
-
-    previous_total = get_total_spent(
-        db,
-        previous_year,
-        previous_month,
-    )
-
-    difference = current_total - previous_total
-
-    if previous_total == 0:
-        change_percentage = None
-    else:
-        change_percentage = (
-            difference
-            / previous_total
-            * Decimal("100")
-        ).quantize(Decimal("0.01"))
-
-    return MonthlyComparison(
-        year=year,
-        month=month,
-        previous_year=previous_year,
-        previous_month=previous_month,
-        current_total=current_total,
-        previous_total=previous_total,
-        difference=difference,
-        change_percentage=change_percentage,
-    )
-def get_month_bounds(
-    year: int,
-    month: int,
-) -> tuple[dt.date, dt.date]:
-    start_date = dt.date(year, month, 1)
-
-    if month == 12:
-        end_date = dt.date(year + 1, 1, 1)
-    else:
-        end_date = dt.date(year, month + 1, 1)
-
-    return start_date, end_date
-
-def get_spending_by_category(
-    db: Session,
-    year: int,
-    month: int,
-) -> list[CategorySpending]:
-    start_date, end_date = get_month_bounds(year, month)
-
-    statement = (
-        select(
-            Expense.category,
-            func.sum(Expense.amount).label("amount"),
-            func.count(Expense.id).label("transaction_count"),
-        )
-        .where(
-            Expense.date >= start_date,
-            Expense.date < end_date,
-        )
-        .group_by(Expense.category)
-        .order_by(func.sum(Expense.amount).desc())
-    )
-
-    rows = db.execute(statement).all()
-
-    return [
-        CategorySpending(
-            category=row.category,
-            amount=row.amount,
-            transaction_count=row.transaction_count,
-        )
-        for row in rows
-    ]
-
-
-def get_daily_spending(
-    db: Session,
-    year: int,
-    month: int,
-) -> list[DailySpending]:
-    start_date, end_date = get_month_bounds(year, month)
-
-    statement = (
-        select(
-            Expense.date,
-            func.sum(Expense.amount).label("amount"),
-            func.count(Expense.id).label("transaction_count"),
-        )
-        .where(
-            Expense.date >= start_date,
-            Expense.date < end_date,
-        )
-        .group_by(Expense.date)
-        .order_by(Expense.date.asc())
-    )
-
-    rows = db.execute(statement).all()
-
-    return [
-        DailySpending(
-            date=row.date,
-            amount=row.amount,
-            transaction_count=row.transaction_count,
-        )
-        for row in rows
-    ]
-
-def get_monthly_summary(
-    db: Session,
-    year: int,
-    month: int,
-) -> MonthlySummary:
-    start_date, end_date = get_month_bounds(year, month)
-
-    expense_filter = (
-        Expense.date >= start_date,
-        Expense.date < end_date,
-    )
-
-    total_spent = db.scalar(
-        select(func.sum(Expense.amount)).where(*expense_filter)
-    )
-
-    if total_spent is None:
-        total_spent = Decimal("0.00")
-
+    ) or Decimal("0.00")
     transaction_count = db.scalar(
-        select(func.count(Expense.id)).where(*expense_filter)
+        select(func.count(Transaction.id)).where(
+            Transaction.date >= start,
+            Transaction.date < end,
+        )
     ) or 0
-
-    if transaction_count == 0:
-        average_expense = Decimal("0.00")
-    else:
-        average_expense = (
-            total_spent / transaction_count
-        ).quantize(Decimal("0.01"))
-
+    accounts = account_service.list_accounts(db)
+    net_worth = sum((item.balance for item in accounts), Decimal("0.00"))
     budget = budget_service.get_budget(db, year, month)
-
-    if budget is None:
-        budget_amount = None
-        remaining = None
-        percentage_used = None
-    else:
-        budget_amount = budget.amount
-        remaining = budget.amount - total_spent
-
-        if budget.amount == 0:
-            percentage_used = None
-        else:
-            percentage_used = (
-                total_spent
-                / budget.amount
-                * Decimal("100")
-            ).quantize(Decimal("0.01"))
-
-    return MonthlySummary(
+    budget_amount = budget.amount if budget else None
+    remaining = None if budget_amount is None else budget_amount - expenses
+    percentage = None
+    if budget_amount not in (None, Decimal("0.00")):
+        percentage = (expenses / budget_amount * Decimal("100")).quantize(Decimal("0.01"))
+    return DashboardSummary(
         year=year,
         month=month,
         budget=budget_amount,
-        total_spent=total_spent,
+        expenses=expenses,
+        income=income,
+        cash_flow=income - expenses,
         remaining=remaining,
-        percentage_used=percentage_used,
+        percentage_used=percentage,
+        net_worth=net_worth,
         transaction_count=transaction_count,
-        average_expense=average_expense,
+        account_count=len(accounts),
     )
+
+
+def get_category_spending(db: Session, year: int, month: int) -> list[CategorySpending]:
+    start, end = month_bounds(year, month)
+    statement = (
+        select(
+            Transaction.category_id,
+            func.coalesce(Category.name, "Sans catégorie"),
+            func.coalesce(Category.color, "#94a3b8"),
+            func.sum(Transaction.amount),
+            func.count(Transaction.id),
+        )
+        .outerjoin(Category, Transaction.category_id == Category.id)
+        .where(
+            Transaction.type == "expense",
+            Transaction.date >= start,
+            Transaction.date < end,
+        )
+        .group_by(Transaction.category_id, Category.name, Category.color)
+        .order_by(func.sum(Transaction.amount).desc())
+    )
+    return [
+        CategorySpending(
+            category_id=category_id,
+            category=category,
+            color=color,
+            amount=amount,
+            transaction_count=count,
+        )
+        for category_id, category, color, amount, count in db.execute(statement).all()
+    ]
+
+
+def get_daily_cash_flow(db: Session, year: int, month: int) -> list[DailyCashFlow]:
+    start, end = month_bounds(year, month)
+    statement = (
+        select(
+            Transaction.date,
+            func.coalesce(
+                func.sum(case((Transaction.type == "expense", Transaction.amount), else_=Decimal("0.00"))),
+                Decimal("0.00"),
+            ).label("expenses"),
+            func.coalesce(
+                func.sum(case((Transaction.type == "income", Transaction.amount), else_=Decimal("0.00"))),
+                Decimal("0.00"),
+            ).label("income"),
+        )
+        .where(Transaction.date >= start, Transaction.date < end)
+        .group_by(Transaction.date)
+        .order_by(Transaction.date.asc())
+    )
+    return [DailyCashFlow(date=date, expenses=expenses, income=income) for date, expenses, income in db.execute(statement).all()]
+
+
+def get_account_balances(db: Session) -> list[AccountBalance]:
+    return [
+        AccountBalance(
+            account_id=item.id,
+            name=item.name,
+            type=item.type,
+            color=item.color,
+            currency=item.currency,
+            balance=item.balance,
+        )
+        for item in account_service.list_accounts(db)
+    ]
+
+
+def get_monthly_history(db: Session, year: int, month: int, months: int = 6) -> list[MonthlyPoint]:
+    points: list[MonthlyPoint] = []
+    cursor_year, cursor_month = year, month
+    periods: list[tuple[int, int]] = []
+    for _ in range(months):
+        periods.append((cursor_year, cursor_month))
+        if cursor_month == 1:
+            cursor_year -= 1
+            cursor_month = 12
+        else:
+            cursor_month -= 1
+    for period_year, period_month in reversed(periods):
+        start, end = month_bounds(period_year, period_month)
+        expenses = db.scalar(
+            select(func.coalesce(func.sum(Transaction.amount), Decimal("0.00"))).where(
+                Transaction.type == "expense",
+                Transaction.date >= start,
+                Transaction.date < end,
+            )
+        ) or Decimal("0.00")
+        income = db.scalar(
+            select(func.coalesce(func.sum(Transaction.amount), Decimal("0.00"))).where(
+                Transaction.type == "income",
+                Transaction.date >= start,
+                Transaction.date < end,
+            )
+        ) or Decimal("0.00")
+        points.append(
+            MonthlyPoint(
+                year=period_year,
+                month=period_month,
+                expenses=expenses,
+                income=income,
+                cash_flow=income - expenses,
+            )
+        )
+    return points

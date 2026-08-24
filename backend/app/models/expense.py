@@ -18,29 +18,10 @@ class Expense(Base):
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
-
-    date: Mapped[dt.date] = mapped_column(
-        Date,
-        nullable=False,
-        index=True,
-    )
-
-    description: Mapped[str] = mapped_column(
-        String(255),
-        nullable=False,
-    )
-
-    amount: Mapped[Decimal] = mapped_column(
-        Numeric(12, 2),
-        nullable=False,
-    )
-
-    category: Mapped[str] = mapped_column(
-        String(50),
-        nullable=False,
-        index=True,
-    )
-
+    date: Mapped[dt.date] = mapped_column(Date, nullable=False, index=True)
+    description: Mapped[str] = mapped_column(String(255), nullable=False)
+    amount: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
+    category: Mapped[str] = mapped_column(String(50), nullable=False, index=True)
     created_at: Mapped[dt.datetime] = mapped_column(
         DateTime(timezone=True),
         server_default=func.now(),

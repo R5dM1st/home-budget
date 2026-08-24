@@ -1,17 +1,36 @@
-from fastapi import APIRouter, Depends, status
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
 from app.db.dependencies import get_db
 from app.models.expense import Expense
-from app.schemas.expense import ExpenseCreate, ExpenseRead, ExpenseUpdate
+from app.schemas.expense import (
+    ExpenseCategory,
+    ExpenseCreate,
+    ExpenseRead,
+    ExpenseUpdate,
+)
+from app.services import expense_service
 
-from sqlalchemy import select
 
 router = APIRouter(
     prefix="/expenses",
     tags=["expenses"],
 )
+
+
+def get_expense_or_404(
+    expense_id: int,
+    db: Session,
+) -> Expense:
+    expense = expense_service.get_expense(db, expense_id)
+
+    if expense is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Expense not found",
+        )
+
+    return expense
 
 
 @router.post(
@@ -23,79 +42,46 @@ def create_expense(
     expense_data: ExpenseCreate,
     db: Session = Depends(get_db),
 ) -> Expense:
-    expense = Expense(
-        date=expense_data.date,
-        description=expense_data.description,
-        amount=expense_data.amount,
-        category=expense_data.category.value,
-    )
+    return expense_service.create_expense(db, expense_data)
 
-    db.add(expense)
-    db.commit()
-    db.refresh(expense)
-
-    return expense
 
 @router.get(
     "",
     response_model=list[ExpenseRead],
 )
 def list_expenses(
+    year: int | None = Query(default=None, ge=2000, le=2100),
+    month: int | None = Query(default=None, ge=1, le=12),
+    category: ExpenseCategory | None = None,
+    search: str | None = Query(default=None, max_length=255),
     db: Session = Depends(get_db),
 ) -> list[Expense]:
-    statement = select(Expense).order_by(
-        Expense.date.desc(),
-        Expense.id.desc(),
+    return expense_service.list_expenses(
+        db,
+        year=year,
+        month=month,
+        category=category.value if category else None,
+        search=search,
     )
 
-    expenses = db.scalars(statement).all()
 
-    return list(expenses)
-
-@router.get(
-    "/{expense_id}",
-    response_model=ExpenseRead,
-)
+@router.get("/{expense_id}", response_model=ExpenseRead)
 def get_expense(
     expense_id: int,
     db: Session = Depends(get_db),
 ) -> Expense:
-    expense = db.get(Expense, expense_id)
+    return get_expense_or_404(expense_id, db)
 
-    if expense is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Expense not found",
-        )
 
-    return expense
-
-@router.put(
-    "/{expense_id}",
-    response_model=ExpenseRead,
-)
+@router.put("/{expense_id}", response_model=ExpenseRead)
 def update_expense(
     expense_id: int,
     expense_data: ExpenseUpdate,
     db: Session = Depends(get_db),
 ) -> Expense:
-    expense = db.get(Expense, expense_id)
+    expense = get_expense_or_404(expense_id, db)
+    return expense_service.update_expense(db, expense, expense_data)
 
-    if expense is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Expense not found",
-        )
-
-    expense.date = expense_data.date
-    expense.description = expense_data.description
-    expense.amount = expense_data.amount
-    expense.category = expense_data.category.value
-
-    db.commit()
-    db.refresh(expense)
-
-    return expense
 
 @router.delete(
     "/{expense_id}",
@@ -105,13 +91,5 @@ def delete_expense(
     expense_id: int,
     db: Session = Depends(get_db),
 ) -> None:
-    expense = db.get(Expense, expense_id)
-
-    if expense is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Expense not found",
-        )
-
-    db.delete(expense)
-    db.commit()
+    expense = get_expense_or_404(expense_id, db)
+    expense_service.delete_expense(db, expense)
